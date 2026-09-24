@@ -24,6 +24,27 @@ mongoose
   .then(() => console.log('✅ Conectado exitosamente a MongoDB Atlas'))
   .catch((err) => console.error('❌ Error conectando a MongoDB Atlas:', err));
 
+// --- RUTA DE AUTENTICACIÓN ---
+
+// POST /api/auth/login (Verificar Contraseña del Admin)
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ success: false, message: 'La contraseña es requerida.' });
+    }
+
+    if (password === process.env.ADMIN_TOKEN) {
+      return res.json({ success: true, message: 'Acceso concedido', token: process.env.ADMIN_TOKEN });
+    }
+
+    return res.status(401).json({ success: false, message: 'Contraseña incorrecta.' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error en el servidor al autenticar' });
+  }
+});
+
 // --- RUTAS PÚBLICAS ---
 
 // 1. GET /api/categories (Obtener todas las categorías ÚNICAS existentes en MongoDB Atlas)
