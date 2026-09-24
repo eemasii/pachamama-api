@@ -26,29 +26,59 @@ mongoose
 
 // --- RUTAS PÚBLICAS ---
 
-// GET /api/products (Con Paginación, Filtro por Categoría y Búsqueda Servidor)
+// 1. GET /api/categories (Obtener todas las categorías ÚNICAS existentes en MongoDB Atlas)
+app.get('/api/categories', async (req, res) => {
+  try {
+    const categories = await Product.distinct('category');
+    
+    // Limpieza, formateo y ordenamiento alfabético en español
+    const cleanCategories = categories
+      .filter((c) => c && typeof c === 'string' && c.trim() !== '')
+      .map((c) => c.trim())
+      .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+
+    // Eliminar duplicados
+    const uniqueCategories = Array.from(new Set(cleanCategories));
+
+    res.json({ success: true, categories: uniqueCategories });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error al obtener categorías', error: error.message });
+  }
+});
+
+// 2. GET /api/products (Paginación, Filtros y Orden Alfabético A-Z)
 app.get('/api/products', async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50; // Límite por defecto
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 10);
     const { category, search } = req.query;
 
     const query = {};
 
+    // Filtrar por categoría
     if (category && category !== 'Todas' && category !== 'Todos') {
       query.category = category;
     }
 
+    // Buscador por texto en título o descripción
     if (search && search.trim() !== '') {
-      query.title = { $regex: search.trim(),$options: 'i' };
+      const searchRegex = { $regex: search.trim(),$options: 'i' };
+      query.$or = [{ title: searchRegex }, { description: searchRegex }];
     }
 
     const skip = (page - 1) * limit;
 
+    // Consulta con orden alfabético A-Z (soporta acentos y minúsculas/mayúsculas)
     const [products, total] = await Promise.all([
-      Product.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Product.find(query)
+        .collation({ locale: 'es', strength: 2 }) // Collation para idioma español
+        .sort({ title: 1 })                       // 1 = Ascendente (A -> Z)
+        .skip(skip)
+        .limit(limit),
       Product.countDocuments(query)
     ]);
+
+    const totalPages = Math.ceil(total / limit) || 1;
 
     res.json({
       success: true,
@@ -57,7 +87,8 @@ app.get('/api/products', async (req, res) => {
         total,
         page,
         limit,
-        totalPages: Math.ceil(total / limit)
+        totalPages,
+        hasMore: page < totalPages
       }
     });
   } catch (error) {
@@ -65,9 +96,9 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
-// --- RUTAS PROTEGIDAS (Solo Admin) ---
+// --- RUTAS PROTEGIDAS (Admin) ---
 
-// POST /api/products (Crear)
+// POST /api/products (Crear Producto)
 app.post('/api/products', requireAdmin, async (req, res) => {
   try {
     const { title, description, price, imageUrl, category, unit } = req.body;
@@ -80,12 +111,12 @@ app.post('/api/products', requireAdmin, async (req, res) => {
     }
 
     const newProduct = new Product({
-      title,
-      description,
+      title: title.trim(),
+      description: description ? description.trim() : '',
       price: Number(price),
-      imageUrl,
-      category,
-      unit: unit || '1kg'
+      imageUrl: imageUrl.trim(),
+      category: category.trim(),
+      unit: unit ? unit.trim() : '1kg'
     });
 
     const savedProduct = await newProduct.save();
@@ -95,7 +126,7 @@ app.post('/api/products', requireAdmin, async (req, res) => {
   }
 });
 
-// PUT /api/products/:id (Editar)
+// PUT /api/products/:id (Editar Producto)
 app.put('/api/products/:id', requireAdmin, async (req, res) => {
   try {
     const updatedProduct = await Product.findByIdAndUpdate(
@@ -114,7 +145,7 @@ app.put('/api/products/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// DELETE /api/products/:id (Eliminar)
+// DELETE /api/products/:id (Eliminar Producto)
 app.delete('/api/products/:id', requireAdmin, async (req, res) => {
   try {
     const deletedProduct = await Product.findByIdAndDelete(req.params.id);
@@ -129,12 +160,12 @@ app.delete('/api/products/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// Middleware Global para manejo de errores de sintaxis o JSON malformado
+// Middleware global de manejo de errores
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ success: false, message: 'Error interno del servidor' });
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor Backend protegido corriendo en http://localhost:${PORT}`);
+  console.log(`🚀 Servidor Backend corriendo en http://localhost:${PORT}`);
 });
