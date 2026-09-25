@@ -135,10 +135,15 @@ app.post('/api/products', requireAdmin, async (req, res) => {
       });
     }
 
+    const numPrice = Number(price);
+    if (isNaN(numPrice) || numPrice < 0) {
+      return res.status(400).json({ success: false, message: 'El precio ingresado no es válido.' });
+    }
+
     const newProduct = new Product({
       title: title.trim(),
       description: description ? description.trim() : '',
-      price: Number(price),
+      price: numPrice,
       imageUrl: imageUrl.trim(),
       category: category.trim(),
       unit: unit ? unit.trim() : '1kg'
@@ -154,12 +159,25 @@ app.post('/api/products', requireAdmin, async (req, res) => {
 // PUT /api/products/:id (Editar Producto)
 app.put('/api/products/:id', requireAdmin, async (req, res) => {
   try {
-    // Se elimina el _id del cuerpo para evitar error de campo inmutable en MongoDB
-    const { _id, ...updateData } = req.body;
+    // Filtrar explícitamente _id, __v y timestamps para no violar restricciones de MongoDB
+    const { _id, __v, createdAt, updatedAt, ...updateData } = req.body;
 
     if (updateData.price !== undefined) {
-      updateData.price = Number(updateData.price);
+      const numPrice = Number(updateData.price);
+      if (isNaN(numPrice) || numPrice < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'El precio debe ser un número válido mayor o igual a 0.'
+        });
+      }
+      updateData.price = numPrice;
     }
+
+    if (updateData.title) updateData.title = updateData.title.trim();
+    if (updateData.category) updateData.category = updateData.category.trim();
+    if (updateData.imageUrl) updateData.imageUrl = updateData.imageUrl.trim();
+    if (updateData.unit) updateData.unit = updateData.unit.trim();
+    if (updateData.description !== undefined) updateData.description = updateData.description.trim();
 
     const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
@@ -173,6 +191,7 @@ app.put('/api/products/:id', requireAdmin, async (req, res) => {
 
     res.json({ success: true, product: updatedProduct });
   } catch (error) {
+    console.error('Error en PUT /api/products/:id:', error);
     res.status(400).json({ success: false, message: 'Error al actualizar el producto', error: error.message });
   }
 });
