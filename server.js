@@ -154,9 +154,16 @@ app.post('/api/products', requireAdmin, async (req, res) => {
 // PUT /api/products/:id (Editar Producto)
 app.put('/api/products/:id', requireAdmin, async (req, res) => {
   try {
+    // Se elimina el _id del cuerpo para evitar error de campo inmutable en MongoDB
+    const { _id, ...updateData } = req.body;
+
+    if (updateData.price !== undefined) {
+      updateData.price = Number(updateData.price);
+    }
+
     const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       { new: true, runValidators: true }
     );
 
