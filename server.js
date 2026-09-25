@@ -19,10 +19,12 @@ app.use(cors({
 app.use(express.json());
 
 // Conexión a MongoDB Atlas
-mongoose
-  .connect(process.env.MONGODB_URI)
-  .then(() => console.log('✅ Conectado exitosamente a MongoDB Atlas'))
-  .catch((err) => console.error('❌ Error conectando a MongoDB Atlas:', err));
+if (process.env.MONGODB_URI) {
+  mongoose
+    .connect(process.env.MONGODB_URI)
+    .then(() => console.log('✅ Conectado exitosamente a MongoDB Atlas'))
+    .catch((err) => console.error('❌ Error conectando a MongoDB Atlas:', err.message));
+}
 
 // --- RUTA DE AUTENTICACIÓN ---
 
@@ -35,8 +37,10 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(400).json({ success: false, message: 'La contraseña es requerida.' });
     }
 
-    if (password === process.env.ADMIN_TOKEN) {
-      return res.json({ success: true, message: 'Acceso concedido', token: process.env.ADMIN_TOKEN });
+    const expectedToken = (process.env.ADMIN_TOKEN || '').trim();
+
+    if (password.trim() === expectedToken) {
+      return res.json({ success: true, message: 'Acceso concedido', token: expectedToken });
     }
 
     return res.status(401).json({ success: false, message: 'Contraseña incorrecta.' });
@@ -47,7 +51,7 @@ app.post('/api/auth/login', (req, res) => {
 
 // --- RUTAS PÚBLICAS ---
 
-// 1. GET /api/categories (Obtener todas las categorías ÚNICAS existentes en MongoDB Atlas)
+// 1. GET /api/categories (Obtener todas las categorías ÚNICAS)
 app.get('/api/categories', async (req, res) => {
   try {
     const categories = await Product.distinct('category');
@@ -89,11 +93,11 @@ app.get('/api/products', async (req, res) => {
 
     const skip = (page - 1) * limit;
 
-    // Consulta con orden alfabético A-Z (soporta acentos y minúsculas/mayúsculas)
+    // Consulta con orden alfabético A-Z
     const [products, total] = await Promise.all([
       Product.find(query)
-        .collation({ locale: 'es', strength: 2 }) // Collation para idioma español
-        .sort({ title: 1 })                       // 1 = Ascendente (A -> Z)
+        .collation({ locale: 'es', strength: 2 })
+        .sort({ title: 1 })
         .skip(skip)
         .limit(limit),
       Product.countDocuments(query)
