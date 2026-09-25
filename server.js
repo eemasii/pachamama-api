@@ -159,7 +159,17 @@ app.post('/api/products', requireAdmin, async (req, res) => {
 // PUT /api/products/:id (Editar Producto)
 app.put('/api/products/:id', requireAdmin, async (req, res) => {
   try {
-    // Filtrar explícitamente _id, __v y timestamps para no violar restricciones de MongoDB
+    const { id } = req.params;
+
+    // Validar formato del ObjectId de MongoDB
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'El ID del producto no es válido para MongoDB.' 
+      });
+    }
+
+    // Filtrar metadatos de MongoDB
     const { _id, __v, createdAt, updatedAt, ...updateData } = req.body;
 
     if (updateData.price !== undefined) {
@@ -180,26 +190,36 @@ app.put('/api/products/:id', requireAdmin, async (req, res) => {
     if (updateData.description !== undefined) updateData.description = updateData.description.trim();
 
     const updatedProduct = await Product.findByIdAndUpdate(
-      req.params.id,
-      updateData,
+      id,
+      { $set: updateData },
       { new: true, runValidators: true }
     );
 
     if (!updatedProduct) {
-      return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+      return res.status(404).json({ success: false, message: 'Producto no encontrado en la base de datos.' });
     }
 
     res.json({ success: true, product: updatedProduct });
   } catch (error) {
-    console.error('Error en PUT /api/products/:id:', error);
-    res.status(400).json({ success: false, message: 'Error al actualizar el producto', error: error.message });
+    console.error('Error al actualizar producto:', error);
+    res.status(400).json({ 
+      success: false, 
+      message: 'Error de validación al actualizar', 
+      error: error.message 
+    });
   }
 });
 
 // DELETE /api/products/:id (Eliminar Producto)
 app.delete('/api/products/:id', requireAdmin, async (req, res) => {
   try {
-    const deletedProduct = await Product.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'ID de producto no válido.' });
+    }
+
+    const deletedProduct = await Product.findByIdAndDelete(id);
 
     if (!deletedProduct) {
       return res.status(404).json({ success: false, message: 'Producto no encontrado' });
