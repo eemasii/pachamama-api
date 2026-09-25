@@ -1,10 +1,11 @@
 export const requireAdmin = (req, res, next) => {
-  const adminToken = req.headers['x-admin-token'];
-  
-  if (!adminToken || adminToken !== process.env.ADMIN_SECRET_TOKEN) {
+  const token = req.headers['x-admin-token'];
+  const expectedToken = (process.env.ADMIN_TOKEN || '').trim();
+
+  if (!token || !expectedToken || token.trim() !== expectedToken) {
     return res.status(401).json({
       success: false,
-      message: 'Acceso no autorizado: Token de administración no válido o ausente.'
+      message: 'Acceso no autorizado: Token inválido o desactualizado.',
     });
   }
 
