@@ -3,7 +3,9 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { Product } from './models/Product.js';
+import multer from 'multer';
 import { requireAdmin } from './middleware/auth.js';
+import { upload } from './config/cloudinary.js';
 
 dotenv.config();
 
@@ -25,6 +27,11 @@ if (process.env.MONGODB_URI) {
     .then(() => console.log('✅ Conectado exitosamente a MongoDB Atlas'))
     .catch((err) => console.error('❌ Error conectando a MongoDB Atlas:', err.message));
 }
+
+// --- HEALTH CHECK (keep-alive, sin consultar la base de datos) ---
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
 
 // --- RUTA DE AUTENTICACIÓN ---
 
@@ -122,6 +129,38 @@ app.get('/api/products', async (req, res) => {
 });
 
 // --- RUTAS PROTEGIDAS (Admin) ---
+
+// POST /api/upload (Subir imagen a Cloudinary)
+// requireAdmin va primero para no procesar archivos de usuarios no autorizados
+app.post('/api/upload', requireAdmin, (req, res) => {
+  upload.single('image')(req, res, (err) => {
+    if (err) {
+      let message = 'Error al subir la imagen.';
+      let status = 500;
+
+      if (err instanceof multer.MulterError) {
+        status = 400;
+        message =
+          err.code === 'LIMIT_FILE_SIZE'
+            ? 'La imagen supera el máximo de 5MB.'
+            : 'Archivo inválido. Enviá un único campo "image".';
+      } else if (err.message === 'INVALID_FILE_TYPE') {
+        status = 400;
+        message = 'Formato no permitido. Usá JPG, PNG o WEBP.';
+      } else {
+        console.error('Error subiendo a Cloudinary:', err);
+      }
+
+      return res.status(status).json({ success: false, message });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No se recibió ninguna imagen.' });
+    }
+
+    res.json({ success: true, imageUrl: req.file.path });
+  });
+});
 
 // POST /api/products (Crear Producto)
 app.post('/api/products', requireAdmin, async (req, res) => {
