@@ -95,7 +95,12 @@ app.get('/api/products', async (req, res) => {
     // Buscador por texto en título o descripción
     if (search && search.trim() !== '') {
       const searchRegex = { $regex: search.trim(),$options: 'i' };
-      query.$or = [{ title: searchRegex }, { description: searchRegex }];
+      const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.$or = [
+        { title: searchRegex },
+        { description: searchRegex },
+        { barcode: { $regex: escaped, $options: 'i' } }
+      ];
     }
 
     const skip = (page - 1) * limit;
@@ -166,6 +171,7 @@ app.post('/api/upload', requireAdmin, (req, res) => {
 app.post('/api/products', requireAdmin, async (req, res) => {
   try {
     const { title, description, price, imageUrl, category, unit } = req.body;
+    const barcode = typeof req.body.barcode === 'string' ? req.body.barcode.trim() : '';
 
     if (!title || price === undefined || !imageUrl || !category) {
       return res.status(400).json({ 
@@ -185,8 +191,19 @@ app.post('/api/products', requireAdmin, async (req, res) => {
       price: numPrice,
       imageUrl: imageUrl.trim(),
       category: category.trim(),
-      unit: unit ? unit.trim() : '1kg'
+      unit: unit ? unit.trim() : '1kg',
+      ...(barcode ? { barcode } : {})
     });
+
+    if (barcode) {
+      const duplicate = await Product.findOne({ barcode });
+      if (duplicate) {
+        return res.status(409).json({
+          success: false,
+          message: `El código de barras ya pertenece a otro producto: ${duplicate.title}`,
+        });
+      }
+    }
 
     const savedProduct = await newProduct.save();
     res.status(201).json({ success: true, product: savedProduct });
@@ -228,9 +245,30 @@ app.put('/api/products/:id', requireAdmin, async (req, res) => {
     if (updateData.unit) updateData.unit = updateData.unit.trim();
     if (updateData.description !== undefined) updateData.description = updateData.description.trim();
 
+    // Código de barras opcional: vacío => se elimina; con valor => debe ser único
+    let unsetBarcode = false;
+    if (updateData.barcode !== undefined) {
+      const barcode = typeof updateData.barcode === 'string' ? updateData.barcode.trim() : '';
+      if (barcode) {
+        const duplicate = await Product.findOne({ barcode, _id: { $ne: id } });
+        if (duplicate) {
+          return res.status(409).json({
+            success: false,
+            message: `El código de barras ya pertenece a otro producto: ${duplicate.title}`,
+          });
+        }
+        updateData.barcode = barcode;
+      } else {
+        delete updateData.barcode;
+        unsetBarcode = true;
+      }
+    }
+
+    const updateOps = unsetBarcode ? { $set: updateData, $unset: { barcode: '' } } : { $set: updateData };
+
     const updatedProduct = await Product.findByIdAndUpdate(
       id,
-      { $set: updateData },
+      updateOps,
       { new: true, runValidators: true }
     );
 

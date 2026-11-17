@@ -34,6 +34,11 @@ const productSchema = new mongoose.Schema(
       default: '1kg',
       trim: true
     },
+    barcode: {
+      type: String,
+      trim: true,
+      default: undefined
+    },
     inStock: { 
       type: Boolean, 
       default: true 
@@ -46,5 +51,11 @@ const productSchema = new mongoose.Schema(
 
 // Índice para acelerar búsquedas por texto y filtro por categoría en MongoDB Atlas
 productSchema.index({ title: 'text', category: 1 });
+
+// Unicidad solo para productos que tienen código de barras (los que no lo tienen no entran al índice)
+productSchema.index(
+  { barcode: 1 },
+  { unique: true, partialFilterExpression: { barcode: { $type: 'string' } } }
+);
 
 export const Product = mongoose.model('Product', productSchema);
